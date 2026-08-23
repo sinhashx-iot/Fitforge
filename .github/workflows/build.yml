@@ -26,28 +26,29 @@ jobs:
 
       - name: Extract, Patch & Build
         run: |
+          set -e
+          
           # 1. Unzip the Phone Build Kit
           unzip -q FitForge_Phone_Build_Kit.zip -d extracted_root
           
-          # 2. Locate and unzip the nested Android project if present
+          # 2. Locate nested zip or project files
           NESTED_ZIP=$(find extracted_root -name "FitForge_Android_Project.zip" | head -n 1)
           if [ -n "$NESTED_ZIP" ]; then
             unzip -q "$NESTED_ZIP" -d project_dir
           else
-            # Otherwise look for the folder that contains settings.gradle.kts
             SETTINGS_PATH=$(find extracted_root -name "settings.gradle.kts" | head -n 1)
             PROJECT_ROOT=$(dirname "$SETTINGS_PATH")
             cp -r "$PROJECT_ROOT" project_dir
           fi
 
-          # Find where the actual root of the project is
-          ROOT_DIR=$(dirname $(find . -maxdepth 3 -name "settings.gradle.kts" | head -n 1))
-          echo "Project Root is: $ROOT_DIR"
-          cd "$ROOT_DIR"
+          # 3. Find the exact directory containing settings.gradle.kts
+          SETTINGS_FILE=$(find . -name "settings.gradle.kts" | head -n 1)
+          WORK_DIR=$(dirname "$SETTINGS_FILE")
+          echo "Working directory found at: $WORK_DIR"
 
-          # 3. Patch MainActivity.kt
-          MAIN_ACTIVITY=$(find . -name "MainActivity.kt" | head -n 1)
-          echo "Patching: $MAIN_ACTIVITY"
+          # 4. Patch MainActivity.kt inside the project
+          MAIN_ACTIVITY=$(find "$WORK_DIR" -name "MainActivity.kt" | head -n 1)
+          echo "Patching MainActivity at: $MAIN_ACTIVITY"
           cat << 'EOF' > "$MAIN_ACTIVITY"
           package com.fitforge.personal
 
@@ -425,4 +426,4 @@ jobs:
                               value = amount,
                               onValueChange = { amount = it },
                               label = { Text("Amount (₹)") },
-                              keyboardOptions = Keyboa
+                              keyboardOptions = Ke
