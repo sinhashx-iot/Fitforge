@@ -1,0 +1,54 @@
+name: Build FitForge APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Extract Project
+        run: |
+          unzip FitForge_Phone_Build_Kit.zip -d extracted_temp
+          # Look for nested project zip if present or use extracted folder directly
+          if [ -f extracted_temp/FitForge_Android_Project.zip ]; then
+            unzip extracted_temp/FitForge_Android_Project.zip -d project_dir
+          else
+            mv extracted_temp project_dir
+          fi
+          # Ensure we are in the directory containing gradlew or app folder
+          if [ ! -f project_dir/settings.gradle.kts ] && [ -d project_dir/FitForge ]; then
+            mv project_dir/FitForge/* project_dir/ || true
+          fi
+          chmod +x project_dir/gradlew || true
+
+      - name: Build Debug APK
+        run: |
+          cd project_dir
+          if [ -f gradlew ]; then
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          else
+            gradle assembleDebug --no-daemon --stacktrace
+          fi
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FitForge-debug-apk
+          path: project_dir/**/build/outputs/apk/debug/*.apk
+          
