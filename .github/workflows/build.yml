@@ -21,17 +21,17 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.10.2'
 
       - name: Extract Project
         run: |
           unzip FitForge_Phone_Build_Kit.zip -d extracted_temp
-          # Look for nested project zip if present or use extracted folder directly
           if [ -f extracted_temp/FitForge_Android_Project.zip ]; then
             unzip extracted_temp/FitForge_Android_Project.zip -d project_dir
           else
             mv extracted_temp project_dir
           fi
-          # Ensure we are in the directory containing gradlew or app folder
           if [ ! -f project_dir/settings.gradle.kts ] && [ -d project_dir/FitForge ]; then
             mv project_dir/FitForge/* project_dir/ || true
           fi
