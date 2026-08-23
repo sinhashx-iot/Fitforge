@@ -24,20 +24,30 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Extract & Patch Project
+      - name: Extract, Patch & Build
         run: |
-          unzip -q FitForge_Phone_Build_Kit.zip -d extracted_temp
-          if [ -f extracted_temp/FitForge_Android_Project.zip ]; then
-            unzip -q extracted_temp/FitForge_Android_Project.zip -d project_dir
-          else
-            mv extracted_temp project_dir
-          fi
-          if [ ! -f project_dir/settings.gradle.kts ] && [ -d project_dir/FitForge ]; then
-            mv project_dir/FitForge/* project_dir/ || true
-          fi
+          # 1. Unzip the Phone Build Kit
+          unzip -q FitForge_Phone_Build_Kit.zip -d extracted_root
           
-          # Fix MainActivity ViewModel instantiation
-          MAIN_ACTIVITY=$(find project_dir -name "MainActivity.kt")
+          # 2. Locate and unzip the nested Android project if present
+          NESTED_ZIP=$(find extracted_root -name "FitForge_Android_Project.zip" | head -n 1)
+          if [ -n "$NESTED_ZIP" ]; then
+            unzip -q "$NESTED_ZIP" -d project_dir
+          else
+            # Otherwise look for the folder that contains settings.gradle.kts
+            SETTINGS_PATH=$(find extracted_root -name "settings.gradle.kts" | head -n 1)
+            PROJECT_ROOT=$(dirname "$SETTINGS_PATH")
+            cp -r "$PROJECT_ROOT" project_dir
+          fi
+
+          # Find where the actual root of the project is
+          ROOT_DIR=$(dirname $(find . -maxdepth 3 -name "settings.gradle.kts" | head -n 1))
+          echo "Project Root is: $ROOT_DIR"
+          cd "$ROOT_DIR"
+
+          # 3. Patch MainActivity.kt
+          MAIN_ACTIVITY=$(find . -name "MainActivity.kt" | head -n 1)
+          echo "Patching: $MAIN_ACTIVITY"
           cat << 'EOF' > "$MAIN_ACTIVITY"
           package com.fitforge.personal
 
@@ -415,9 +425,4 @@ jobs:
                               value = amount,
                               onValueChange = { amount = it },
                               label = { Text("Amount (₹)") },
-                              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                          )
-                          OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Category (e.g. Food, Gym)") })
-                          Row {
-                              RadioButton(selected = type == "expense", onClick = { type = "expense" })
-                              Text("Expense", modifier = Modifier.align(Alignment.CenterVertically
+                              keyboardOptions = Keyboa
