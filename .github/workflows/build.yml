@@ -24,31 +24,27 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Extract, Patch & Build
+      - name: Extract Project Files
         run: |
-          set -e
+          mkdir -p final_project
+          unzip -o FitForge_Phone_Build_Kit.zip -d raw_extracted/
           
-          # 1. Unzip the Phone Build Kit
-          unzip -q FitForge_Phone_Build_Kit.zip -d extracted_root
-          
-          # 2. Locate nested zip or project files
-          NESTED_ZIP=$(find extracted_root -name "FitForge_Android_Project.zip" | head -n 1)
+          # Find nested project zip if present
+          NESTED_ZIP=$(find raw_extracted -name "*.zip" | head -n 1)
           if [ -n "$NESTED_ZIP" ]; then
-            unzip -q "$NESTED_ZIP" -d project_dir
+            unzip -o "$NESTED_ZIP" -d final_project/
           else
-            SETTINGS_PATH=$(find extracted_root -name "settings.gradle.kts" | head -n 1)
-            PROJECT_ROOT=$(dirname "$SETTINGS_PATH")
-            cp -r "$PROJECT_ROOT" project_dir
+            cp -r raw_extracted/* final_project/
           fi
+          
+          # Find directory with settings.gradle.kts
+          SETTINGS_FILE=$(find final_project -name "settings.gradle.kts" | head -n 1)
+          PROJ_DIR=$(dirname "$SETTINGS_FILE")
+          echo "PROJ_DIR=$PROJ_DIR" >> $GITHUB_ENV
 
-          # 3. Find the exact directory containing settings.gradle.kts
-          SETTINGS_FILE=$(find . -name "settings.gradle.kts" | head -n 1)
-          WORK_DIR=$(dirname "$SETTINGS_FILE")
-          echo "Working directory found at: $WORK_DIR"
-
-          # 4. Patch MainActivity.kt inside the project
-          MAIN_ACTIVITY=$(find "$WORK_DIR" -name "MainActivity.kt" | head -n 1)
-          echo "Patching MainActivity at: $MAIN_ACTIVITY"
+      - name: Patch MainActivity
+        run: |
+          MAIN_ACTIVITY=$(find "$PROJ_DIR" -name "MainActivity.kt" | head -n 1)
           cat << 'EOF' > "$MAIN_ACTIVITY"
           package com.fitforge.personal
 
@@ -426,4 +422,8 @@ jobs:
                               value = amount,
                               onValueChange = { amount = it },
                               label = { Text("Amount (₹)") },
-                              keyboardOptions = Ke
+                              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                          )
+                          OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Category (e.g. Food, Gym)") })
+                          Row {
+             
