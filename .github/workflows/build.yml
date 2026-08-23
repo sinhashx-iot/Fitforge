@@ -10,9 +10,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -24,28 +21,184 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Extract Project Files
+      - name: Generate App Source Code
         run: |
-          mkdir -p final_project
-          unzip -o FitForge_Phone_Build_Kit.zip -d raw_extracted/
-          
-          # Find nested project zip if present
-          NESTED_ZIP=$(find raw_extracted -name "*.zip" | head -n 1)
-          if [ -n "$NESTED_ZIP" ]; then
-            unzip -o "$NESTED_ZIP" -d final_project/
-          else
-            cp -r raw_extracted/* final_project/
-          fi
-          
-          # Find directory with settings.gradle.kts
-          SETTINGS_FILE=$(find final_project -name "settings.gradle.kts" | head -n 1)
-          PROJ_DIR=$(dirname "$SETTINGS_FILE")
-          echo "PROJ_DIR=$PROJ_DIR" >> $GITHUB_ENV
+          mkdir -p FitForge/app/src/main/java/com/fitforge/personal/data
+          cd FitForge
 
-      - name: Patch MainActivity
-        run: |
-          MAIN_ACTIVITY=$(find "$PROJ_DIR" -name "MainActivity.kt" | head -n 1)
-          cat << 'EOF' > "$MAIN_ACTIVITY"
+          cat << 'EOF' > settings.gradle.kts
+          pluginManagement {
+              repositories {
+                  google {
+                      content {
+                          includeGroupByRegex("com\\.android.*")
+                          includeGroupByRegex("com\\.google.*")
+                          includeGroupByRegex("androidx.*")
+                      }
+                  }
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "FitForge"
+          include(":app")
+          EOF
+
+          cat << 'EOF' > build.gradle.kts
+          plugins {
+              id("com.android.application") version "8.7.3" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+              id("com.google.devtools.ksp") version "2.0.21-1.0.28" apply false
+          }
+          EOF
+
+          cat << 'EOF' > app/build.gradle.kts
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+              id("org.jetbrains.kotlin.plugin.compose")
+              id("com.google.devtools.ksp")
+          }
+
+          android {
+              namespace = "com.fitforge.personal"
+              compileSdk = 35
+
+              defaultConfig {
+                  applicationId = "com.fitforge.personal"
+                  minSdk = 26
+                  targetSdk = 35
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              buildFeatures { compose = true }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+          }
+
+          dependencies {
+              implementation("androidx.core:core-ktx:1.15.0")
+              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+              implementation("androidx.activity:activity-compose:1.9.3")
+              implementation(platform("androidx.compose:compose-bom:2024.11.00"))
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.ui:ui-graphics")
+              implementation("androidx.compose.material3:material3")
+              implementation("androidx.compose.material:material-icons-extended")
+              implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+
+              val room_version = "2.6.1"
+              implementation("androidx.room:room-runtime:$room_version")
+              implementation("androidx.room:room-ktx:$room_version")
+              ksp("androidx.room:room-compiler:$room_version")
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:allowBackup="true"
+                  android:icon="@android:drawable/ic_menu_myplaces"
+                  android:label="FitForge"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.NoTitleBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:theme="@android:style/Theme.NoTitleBar">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/fitforge/personal/data/AppDatabase.kt
+          package com.fitforge.personal.data
+
+          import android.content.Context
+          import androidx.room.*
+          import kotlinx.coroutines.flow.Flow
+
+          @Entity(tableName = "fitness_day")
+          data class FitnessDay(
+              @PrimaryKey val date: String = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date()),
+              val steps: Int = 0,
+              val workoutMinutes: Int = 0,
+              val waterMl: Int = 0
+          )
+
+          @Entity(tableName = "finance_entry")
+          data class FinanceEntry(
+              @PrimaryKey(autoGenerate = true) val id: Int = 0,
+              val date: String,
+              val title: String,
+              val amount: Double,
+              val type: String,
+              val category: String
+          )
+
+          @Dao
+          interface FitnessDao {
+              @Query("SELECT * FROM fitness_day WHERE date = :date LIMIT 1")
+              fun getTodayFitness(date: String = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())): Flow<FitnessDay?>
+
+              @Insert(onConflict = OnConflictStrategy.REPLACE)
+              suspend fun insertOrUpdate(day: FitnessDay)
+          }
+
+          @Dao
+          interface FinanceDao {
+              @Query("SELECT * FROM finance_entry ORDER BY id DESC")
+              fun getAllEntries(): Flow<List<FinanceEntry>>
+
+              @Query("SELECT SUM(amount) FROM finance_entry WHERE type = 'income'")
+              fun getTotalIncome(): Flow<Double?>
+
+              @Query("SELECT SUM(amount) FROM finance_entry WHERE type = 'expense'")
+              fun getTotalExpense(): Flow<Double?>
+
+              @Insert
+              suspend fun insertEntry(entry: FinanceEntry)
+          }
+
+          @Database(entities = [FitnessDay::class, FinanceEntry::class], version = 1, exportSchema = false)
+          abstract class AppDatabase : RoomDatabase() {
+              abstract fun fitnessDao(): FitnessDao
+              abstract fun financeDao(): FinanceDao
+
+              companion object {
+                  @Volatile private var INSTANCE: AppDatabase? = null
+                  fun getDatabase(context: Context): AppDatabase {
+                      return INSTANCE ?: synchronized(this) {
+                          val instance = Room.databaseBuilder(
+                              context.applicationContext,
+                              AppDatabase::class.java,
+                              "fitforge.db"
+                          ).build()
+                          INSTANCE = instance
+                          instance
+                      }
+                  }
+              }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/fitforge/personal/MainActivity.kt
           package com.fitforge.personal
 
           import android.content.Context
@@ -319,111 +472,4 @@ jobs:
                       MetricCard("Water Intake", "${current.waterMl} ml / 3,000 ml", (current.waterMl / 3000f).coerceIn(0f, 1f), Color(0xFF33CCFF))
                   }
                   item {
-                      Text("Quick Log", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 18.sp)
-                  }
-                  item {
-                      Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                          Button(onClick = { vm.addSteps(500) }, modifier = Modifier.weight(1f)) { Text("+500 Steps") }
-                          Button(onClick = { vm.addWorkout(15) }, modifier = Modifier.weight(1f)) { Text("+15m Gym") }
-                          Button(onClick = { vm.addWater(250) }, modifier = Modifier.weight(1f)) { Text("+250ml") }
-                      }
-                  }
-              }
-          }
-
-          @Composable
-          fun MetricCard(title: String, subtitle: String, progress: Float, color: Color) {
-              Card(
-                  colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2130)),
-                  shape = RoundedCornerShape(16.dp),
-                  modifier = Modifier.fillMaxWidth()
-              ) {
-                  Column(modifier = Modifier.padding(16.dp)) {
-                      Text(title, color = Color.Gray, fontSize = 14.sp)
-                      Text(subtitle, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.padding(vertical = 6.dp))
-                      LinearProgressIndicator(
-                          progress = { progress },
-                          modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
-                          color = color,
-                          trackColor = Color(0xFF2C3147)
-                      )
-                  }
-              }
-          }
-
-          @Composable
-          fun FinanceTab(income: Double, expense: Double, list: List<FinanceEntry>) {
-              LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                  item {
-                      Card(
-                          colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2130)),
-                          shape = RoundedCornerShape(16.dp),
-                          modifier = Modifier.fillMaxWidth()
-                      ) {
-                          Column(modifier = Modifier.padding(18.dp)) {
-                              Text("Net Balance", color = Color.Gray)
-                              Text("₹${String.format(Locale.getDefault(), "%.2f", income - expense)}", color = Color.White, fontWeight = FontWeight.Black, fontSize = 28.sp)
-                              Spacer(modifier = Modifier.height(12.dp))
-                              Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                  Text("Income: +₹${String.format(Locale.getDefault(), "%.2f", income)}", color = Color(0xFF00E676), fontWeight = FontWeight.Bold)
-                                  Text("Spent: -₹${String.format(Locale.getDefault(), "%.2f", expense)}", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold)
-                              }
-                          }
-                      }
-                  }
-                  item {
-                      Text("Recent Transactions", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 18.sp)
-                  }
-                  if (list.isEmpty()) {
-                      item {
-                          Text("No transactions logged yet.", color = Color.Gray, modifier = Modifier.padding(top = 10.dp))
-                      }
-                  } else {
-                      items(list) { item ->
-                          Card(
-                              colors = CardDefaults.cardColors(containerColor = Color(0xFF161822)),
-                              modifier = Modifier.fillMaxWidth()
-                          ) {
-                              Row(
-                                  modifier = Modifier.fillMaxWidth().padding(14.dp),
-                                  horizontalArrangement = Arrangement.SpaceBetween,
-                                  verticalAlignment = Alignment.CenterVertically
-                              ) {
-                                  Column {
-                                      Text(item.title, color = Color.White, fontWeight = FontWeight.SemiBold)
-                                      Text("${item.category} • ${item.date}", color = Color.Gray, fontSize = 12.sp)
-                                  }
-                                  Text(
-                                      text = (if (item.type == "income") "+₹" else "-₹") + String.format(Locale.getDefault(), "%.2f", item.amount),
-                                      color = if (item.type == "income") Color(0xFF00E676) else Color(0xFFFF5252),
-                                      fontWeight = FontWeight.Bold
-                                  )
-                              }
-                          }
-                      }
-                  }
-              }
-          }
-
-          @Composable
-          fun AddTransactionDialog(onDismiss: () -> Unit, onAdd: (String, Double, String, String) -> Unit) {
-              var title by remember { mutableStateOf("") }
-              var amount by remember { mutableStateOf("") }
-              var type by remember { mutableStateOf("expense") }
-              var category by remember { mutableStateOf("General") }
-
-              AlertDialog(
-                  onDismissRequest = onDismiss,
-                  title = { Text("New Transaction") },
-                  text = {
-                      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                          OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") })
-                          OutlinedTextField(
-                              value = amount,
-                              onValueChange = { amount = it },
-                              label = { Text("Amount (₹)") },
-                              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                          )
-                          OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Category (e.g. Food, Gym)") })
-                          Row {
-             
+                      Text("Quick Log"
